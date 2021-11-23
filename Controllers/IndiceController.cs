@@ -7,24 +7,34 @@ namespace CorrecaoApi.Controllers
     [Route("[controller]")]
     public class IndiceController : ControllerBase
     {
-        private readonly ILogger<IndiceController> _logger;
+        private const int AnoInicioSerieInpc = 1979;
+        private const int MesInicioSerieInpc = 3;
 
-        public IndiceController(ILogger<IndiceController> logger)
+        private readonly ILogger<IndiceController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        public IndiceController(ILogger<IndiceController> logger, IHttpClientFactory httpClientFactory)
         {
             _logger = logger;
+            _httpClientFactory = httpClientFactory;
         }
 
         [HttpGet(Name = "inpc")]
-        public IEnumerable<IndiceDto> GetInpc([FromQuery] string mesano)
+        public async Task<IActionResult> GetInpcAsync([FromQuery] int ano, [FromQuery] int mes)
         {
-            return new IndiceDto[]
-            {
-                new IndiceDto()
-                {
-                     NivelTerritorial = "Brasil",
-                     ValorIndice = new decimal(0.60)
-                }
-            };
+            var dataMinInpc = new DateTime(AnoInicioSerieInpc, MesInicioSerieInpc, 1);
+            var dataInformada = new DateTime(ano, mes, 1);
+
+            if (dataInformada < dataMinInpc)
+                return BadRequest("Índices INPC disponíveis a partir de Abril de 1979.");
+            
+            var client = _httpClientFactory.CreateClient("ApiSidra");
+            var indices = await client.GetFromJsonAsync<List<IndiceDto>>($"/values/t/1736/p/{ano:0000}{mes:00}/n1/1/v/44/f/n/h/n?formato=json");
+
+            if (indices == null || indices.Count == 0)
+                return BadRequest(new { Sucesso = false, Mensagem = $"Nenhum índice INPC encontrado para o periodo: {ano:0000}{mes:00}." });
+
+            return Ok(indices);
         }
     }
 }
