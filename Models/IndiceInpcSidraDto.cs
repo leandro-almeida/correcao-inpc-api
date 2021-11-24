@@ -2,7 +2,7 @@
 
 namespace CorrecaoApi.Models
 {
-    public class IndiceDto
+    public class IndiceInpcSidraDto
     {
         // Formato esperado:
         //[{"NN":"Brasil","MN":"%","V":"0.60","D1N":"abril 2019","D2N":"Brasil","D3N":"INPC - Variação mensal"}]

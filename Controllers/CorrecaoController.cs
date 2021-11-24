@@ -16,14 +16,25 @@ namespace CorrecaoApi.Controllers
             _httpClientFactory = httpClientFactory;
         }
 
-        [HttpPost(Name = "atualizar-valor")]
-        public async Task<IActionResult> AtualizarValorAsync([FromBody] CorrecaoRequestDto correcaoRequestDto)
+        [HttpPost]
+        [Route("atualizar-valor")]
+        public async Task<IActionResult> AtualizarValorAsync([FromBody] CorrecaoRequestDto request)
         {
-            var anoMesCorrente = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-            var dataAux = new DateTime(correcaoRequestDto.AnoOriginal, correcaoRequestDto.MesOriginal, 1);
+            if (request.ValorOriginal <= 0 || request.AnoOriginal <= 0 || request.MesOriginal <= 0)
+                return BadRequest("Parametros invalidos.");
+
+            if (!InpcUtil.PossuiIndiceInpc(request.AnoOriginal, request.MesOriginal))
+                return BadRequest("Índices INPC disponíveis a partir de Abril de 1979.");
+
+            var anoMesAtualizacao = new DateTime(
+                request.AnoAtualizacao <= 0 ? DateTime.Now.Year : request.AnoAtualizacao, 
+                request.MesAtualizacao <= 0 ? DateTime.Now.Month : request.MesAtualizacao,
+                1);
+            
+            var dataAux = new DateTime(request.AnoOriginal, request.MesOriginal, 1);
             var periodos = string.Empty;
 
-            while (dataAux.Date <= anoMesCorrente.Date)
+            while (dataAux.Date < anoMesAtualizacao.Date) // Atualiza ate o indice do mes anterior
             {
                 periodos += $",{dataAux.Year:0000}{dataAux.Month:00}";
                 dataAux = dataAux.AddMonths(1);
@@ -32,18 +43,20 @@ namespace CorrecaoApi.Controllers
 
             // Obtem indices da API Sidra
             var client = _httpClientFactory.CreateClient("ApiSidra");
-            var indices = await client.GetFromJsonAsync<List<IndiceDto>>($"/values/t/1736/p/{periodos}/n1/1/v/44/f/n/h/n?formato=json");
+            var indices = await client.GetFromJsonAsync<List<IndiceInpcSidraDto>>($"/values/t/1736/p/{periodos}/n1/1/v/44/f/n/h/n?formato=json");
 
             if (indices == null || indices.Count == 0)
-                return BadRequest(new { Sucesso = false, Mensagem = $"Nenhum índice INPC encontrado nos períodos: {periodos}." });
+                return BadRequest($"Nenhum índice INPC encontrado nos períodos: {periodos}.");
 
-            var indiceAcumulado = indices.Sum(i => i.ValorIndice);
+            // Calcula o Indice Acumulado
+            decimal indiceAcumulado = 1;
+            indices.ForEach(x => indiceAcumulado *= 1 + (x.ValorIndice / 100));
 
             return Ok(new CorrecaoResponseDto
             {
-                ValorOriginal = correcaoRequestDto.ValorOriginal,
-                ValorAtualizado = correcaoRequestDto.ValorOriginal * (1 + (indiceAcumulado/100)),
-                IndiceAcumulado = indiceAcumulado
+                ValorOriginal = request.ValorOriginal,
+                ValorAtualizado = request.ValorOriginal * indiceAcumulado,
+                IndiceAcumulado = (indiceAcumulado - 1) * 100
             });
         }
 
@@ -52,6 +65,8 @@ namespace CorrecaoApi.Controllers
             public decimal ValorOriginal { get; set; }
             public int AnoOriginal { get; set; }
             public int MesOriginal { get; set; }
+            public int AnoAtualizacao { get; set; }
+            public int MesAtualizacao { get; set; }
         }
 
         public class CorrecaoResponseDto
